@@ -7,15 +7,20 @@ on:
 
 jobs:
   test-and-build:
-    name: Test & Build (${{ matrix.arch }})
+    name: Test & Build (${{ matrix.os }} ${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
         include:
-          - arch: amd64
+          - os: linux
+            arch: amd64
             runner: ubuntu-latest
-          - arch: arm64
+          - os: linux
+            arch: arm64
             runner: ubuntu-24.04-arm
+          - os: darwin
+            arch: arm64
+            runner: macos-latest
     
     steps:
     - name: Checkout code
@@ -30,10 +35,10 @@ jobs:
       run: go test -v ./...
 
     - name: Build
-      run: go build -v -o chromium-list-linux-${{ matrix.arch }} .
+      run: go build -v -o chromium-list-${{ matrix.os }}-${{ matrix.arch }} .
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: chromium-list-linux-${{ matrix.arch }}
-        path: chromium-list-linux-${{ matrix.arch }}
+        name: chromium-list-${{ matrix.os }}-${{ matrix.arch }}
+        path: chromium-list-${{ matrix.os }}-${{ matrix.arch }}
