@@ -1,0 +1,39 @@
+name: Build and Test
+
+on:
+  push:
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  test-and-build:
+    name: Test & Build (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: 'go.mod'
+
+    - name: Test
+      run: go test -v ./...
+
+    - name: Build
+      run: go build -v -o chromium-list-linux-${{ matrix.arch }} .
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: chromium-list-linux-${{ matrix.arch }}
+        path: chromium-list-linux-${{ matrix.arch }}
