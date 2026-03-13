@@ -20,6 +20,7 @@ const (
 
 var (
 	targetArch string
+	targetDist string
 )
 
 type chromiumVersion struct {
@@ -39,6 +40,7 @@ func main() {
 	}
 
 	rootCmd.Flags().StringVar(&targetArch, "arch", "", "Target architecture (amd64, arm64, armhf, i386)")
+	rootCmd.Flags().StringVar(&targetDist, "dist", "", "Target debian distribution version (e.g., 11, 12, 13, sid)")
 	rootCmd.Flags().Bool("latest", true, "Show latest version (default)")
 
 	if err := rootCmd.Execute(); err != nil {
@@ -51,6 +53,20 @@ func run(cmd *cobra.Command, args []string) {
 	arch := targetArch
 	if arch == "" {
 		arch = detectArch()
+	}
+
+	dist := targetDist
+	if dist == "" {
+		dist = detectDist()
+		if dist == "" {
+			fmt.Println("Error: could not automatically detect debian distribution. Please provide --dist flag.")
+			os.Exit(1)
+		}
+	}
+
+	// Map known codenames to the expected filtering values
+	if dist == "unstable" || dist == "trixie/sid" {
+		dist = "sid"
 	}
 
 	resp, err := http.Get(baseURL)
@@ -67,11 +83,34 @@ func run(cmd *cobra.Command, args []string) {
 	}
 
 	var versions []chromiumVersion
+	distHasAnyPackages := false
+
 	for _, link := range links {
-		// Expect format: chromium_133.0.6943.53-1~deb12u1_amd64.deb
 		if !strings.HasPrefix(link, "chromium_") || !strings.HasSuffix(link, ".deb") {
 			continue
 		}
+
+		// Filter by distribution
+		matchesDist := false
+		if dist == "sid" || dist == "testing" {
+			// For sid, packages usually don't have ~deb in the revision, or have +b something.
+			// e.g. chromium_146.0.7680.71-1_amd64.deb is sid.
+			if !strings.Contains(link, "~deb") {
+				matchesDist = true
+			}
+		} else {
+			// We expect dist to be the numeric version, e.g. "12"
+			debCode := fmt.Sprintf("~deb%s", dist)
+			if strings.Contains(link, debCode) {
+				matchesDist = true
+			}
+		}
+
+		if !matchesDist {
+			continue
+		}
+
+		distHasAnyPackages = true
 
 		if !strings.HasSuffix(link, "_"+arch+".deb") {
 			continue
@@ -84,7 +123,11 @@ func run(cmd *cobra.Command, args []string) {
 	}
 
 	if len(versions) == 0 {
-		fmt.Printf("No versions found for architecture: %s\n", arch)
+		if !distHasAnyPackages {
+			fmt.Printf("Distribution '%s' not found or invalid\n", dist)
+		} else {
+			fmt.Printf("No versions found for architecture: %s\n", arch)
+		}
 		os.Exit(1)
 	}
 
@@ -109,6 +152,41 @@ func detectArch() string {
 	default:
 		return runtime.GOARCH
 	}
+}
+
+func detectDist() string {
+	// Try to read /etc/os-release
+	data, err := os.ReadFile("/etc/os-release")
+	if err == nil {
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines {
+			if strings.HasPrefix(line, "VERSION_ID=") {
+				return strings.Trim(strings.TrimPrefix(line, "VERSION_ID="), `"'`)
+			}
+		}
+	}
+	
+	// Fallback to /etc/debian_version to guess sid/testing
+	data, err = os.ReadFile("/etc/debian_version")
+	if err == nil {
+		version := strings.TrimSpace(string(data))
+		if version == "trixie/sid" || version == "testing" {
+			// Without /etc/os-release we can't be sure if it's trixie or sid.
+			// Let's assume sid as it's common for this case, or we could require explicit flag.
+			// But returning "sid" works well for "trixie/sid" which is what's usually in testing.
+			return "sid"
+		}
+		
+		// If we couldn't find VERSION_ID, extract major number from debian_version
+		if strings.Contains(version, ".") {
+			return strings.Split(version, ".")[0]
+		}
+		if version != "" {
+			return version
+		}
+	}
+	
+	return ""
 }
 
 func parseLinks(r io.Reader) ([]string, error) {
