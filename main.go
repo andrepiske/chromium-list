@@ -78,28 +78,37 @@ func run(cmd *cobra.Command, args []string) {
 	}
 
 	var versions []chromiumVersion
+	distHasAnyPackages := false
+
 	for _, link := range links {
 		if !strings.HasPrefix(link, "chromium_") || !strings.HasSuffix(link, ".deb") {
 			continue
 		}
 
-		if !strings.HasSuffix(link, "_"+arch+".deb") {
-			continue
-		}
-
 		// Filter by distribution
+		matchesDist := false
 		if dist == "sid" || dist == "testing" {
 			// For sid, packages usually don't have ~deb in the revision, or have +b something.
 			// e.g. chromium_146.0.7680.71-1_amd64.deb is sid.
-			if strings.Contains(link, "~deb") {
-				continue
+			if !strings.Contains(link, "~deb") {
+				matchesDist = true
 			}
 		} else {
 			// We expect dist to be the numeric version, e.g. "12"
 			debCode := fmt.Sprintf("~deb%s", dist)
-			if !strings.Contains(link, debCode) {
-				continue
+			if strings.Contains(link, debCode) {
+				matchesDist = true
 			}
+		}
+
+		if !matchesDist {
+			continue
+		}
+
+		distHasAnyPackages = true
+
+		if !strings.HasSuffix(link, "_"+arch+".deb") {
+			continue
 		}
 
 		v, err := parseVersion(link)
@@ -109,7 +118,11 @@ func run(cmd *cobra.Command, args []string) {
 	}
 
 	if len(versions) == 0 {
-		fmt.Printf("No versions found for architecture: %s\n", arch)
+		if !distHasAnyPackages {
+			fmt.Printf("Distribution '%s' not found or invalid\n", dist)
+		} else {
+			fmt.Printf("No versions found for architecture: %s\n", arch)
+		}
 		os.Exit(1)
 	}
 
