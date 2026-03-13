@@ -40,7 +40,7 @@ func main() {
 	}
 
 	rootCmd.Flags().StringVar(&targetArch, "arch", "", "Target architecture (amd64, arm64, armhf, i386)")
-	rootCmd.Flags().StringVar(&targetDist, "dist", "", "Target debian distribution (sid, trixie, bookworm, bullseye)")
+	rootCmd.Flags().StringVar(&targetDist, "dist", "", "Target debian distribution version (e.g., 11, 12, 13, sid)")
 	rootCmd.Flags().Bool("latest", true, "Show latest version (default)")
 
 	if err := rootCmd.Execute(); err != nil {
@@ -90,31 +90,13 @@ func run(cmd *cobra.Command, args []string) {
 		// Filter by distribution
 		if dist == "sid" || dist == "testing" {
 			// For sid, packages usually don't have ~deb in the revision, or have +b something.
-			// e.g. chromium_146.0.7680.71-1_amd64.deb is sid,
-			// chromium_145.0.7632.116-1~deb12u1_amd64.deb is bookworm.
+			// e.g. chromium_146.0.7680.71-1_amd64.deb is sid.
 			if strings.Contains(link, "~deb") {
 				continue
 			}
 		} else {
-			// e.g. dist == "bookworm", we look for ~deb12
-			// The exact mapping between dist and deb version:
-			// bullseye: ~deb11
-			// bookworm: ~deb12
-			// trixie: ~deb13
-			
-			debCode := ""
-			switch dist {
-			case "bullseye":
-				debCode = "~deb11"
-			case "bookworm":
-				debCode = "~deb12"
-			case "trixie":
-				debCode = "~deb13"
-			default:
-				fmt.Printf("Error: unsupported distribution '%s'\n", dist)
-				os.Exit(1)
-			}
-			
+			// We expect dist to be the numeric version, e.g. "12"
+			debCode := fmt.Sprintf("~deb%s", dist)
 			if !strings.Contains(link, debCode) {
 				continue
 			}
@@ -160,8 +142,8 @@ func detectDist() string {
 	if err == nil {
 		lines := strings.Split(string(data), "\n")
 		for _, line := range lines {
-			if strings.HasPrefix(line, "VERSION_CODENAME=") {
-				return strings.Trim(strings.TrimPrefix(line, "VERSION_CODENAME="), `"'`)
+			if strings.HasPrefix(line, "VERSION_ID=") {
+				return strings.Trim(strings.TrimPrefix(line, "VERSION_ID="), `"'`)
 			}
 		}
 	}
@@ -175,6 +157,14 @@ func detectDist() string {
 			// Let's assume sid as it's common for this case, or we could require explicit flag.
 			// But returning "sid" works well for "trixie/sid" which is what's usually in testing.
 			return "sid"
+		}
+		
+		// If we couldn't find VERSION_ID, extract major number from debian_version
+		if strings.Contains(version, ".") {
+			return strings.Split(version, ".")[0]
+		}
+		if version != "" {
+			return version
 		}
 	}
 	
