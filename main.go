@@ -64,6 +64,11 @@ func run(cmd *cobra.Command, args []string) {
 		}
 	}
 
+	// Map known codenames to the expected filtering values
+	if dist == "unstable" || dist == "trixie/sid" {
+		dist = "sid"
+	}
+
 	resp, err := http.Get(baseURL)
 	if err != nil {
 		fmt.Printf("Error fetching URL: %v\n", err)
